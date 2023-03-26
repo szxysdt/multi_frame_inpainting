@@ -1,5 +1,5 @@
 # Original Xanthius (https://xanthius.itch.io/multi-frame-rendering-for-stablediffusion)
-# 二次修改 
+# 二次修改 OedoSoldier [大江户战士] (https://space.bilibili.com/55123)
 # 三次修改 szxysdt [水煮咸鱼三段突] (https://space.bilibili.com/80438516)
 
 import numpy as np
@@ -26,11 +26,14 @@ import piexif.helper
 import os, re
 import time
 
+
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
+
 def gr_show_value_none(visible=True):
     return {"value": None, "visible": visible, "__type__": "update"}
+
 
 def gr_show_and_load(value=None, visible=True):
     if value:
@@ -42,44 +45,68 @@ def gr_show_and_load(value=None, visible=True):
         visible = False
     return {"value": value, "visible": visible, "__type__": "update"}
 
+
 class Script(scripts.Script):
     def title(self):
-        return "(Beta) Multi-frame Video inpainting Pro-No org"
+        return "多帧修复式转绘（魔改测试版）(Beta) Multi Frame Inpainting V3"
 
     def show(self, is_img2img):
         return is_img2img
 
-    def ui(self, is_img2img):  
+    def ui(self, is_img2img):
+
+        # use_multiframe_pro = gr.Checkbox(label="开启多帧重绘魔改版！（选Multiframe开启）", value=True)
+
         with gr.Row():
-            input_dir = gr.Textbox(label='Input directory', lines=1)
-            output_dir = gr.Textbox(label='Output directory', lines=1)
-        # reference_imgs = gr.UploadButton(label="Upload Guide Frames", file_types = ['.png','.jpg','.jpeg'], live=True, file_count = "multiple")   
-        first_denoise = gr.Slider(minimum=0, maximum=1, step=0.05, label='第一张的去噪强度', value=1, elem_id=self.elem_id("first_denoise"))
-        other_denoise = gr.Slider(minimum=0, maximum=1, step=0.05, label='后续帧的去噪强度', value=0.7, elem_id=self.elem_id("other_denoise"))
-        
-        append_interrogation = gr.Dropdown(label="Append interrogated prompt at each iteration", choices=["None", "CLIP", "DeepBooru"], value="None")
+            input_dir = gr.Textbox(label='输入路径 (Input directory)', lines=1)
+            output_dir = gr.Textbox(
+                label='输出路径，你可以空着不填，脚本会自动在输入路径下面建一个时间命名的文件夹当输出 (Output directory. If empty, the script will automatically create a time named folder under the input path for output)',
+                lines=1)
+        # reference_imgs = gr.UploadButton(label="Upload Guide Frames", file_types = ['.png','.jpg','.jpeg'], live=True, file_count = "multiple")
+        with gr.Row():
+            first_denoise_strength = gr.Slider(minimum=0, maximum=1, step=0.05, value=0.7,
+                                               label='第一张的去噪强度 (The denoise strength of first frame)',
+                                               elem_id=self.elem_id("first_denoise_strength"))
+            remaining_denoise_strength = gr.Slider(minimum=0, maximum=1, step=0.05, value=0.6,
+                                                   label='后续帧的去噪强度 (The denoise strength of remaining frames)',
+                                                   elem_id=self.elem_id("remaining_denoise_strength"))
+
+        append_interrogation = gr.Dropdown(label="自动识别词条，然后加入到原先词条的后面 Append interrogated prompt at each iteration",
+                                           choices=["None", "CLIP", "DeepBooru"], value="None")
         # third_frame_image = gr.Dropdown(label="Third Frame Image", choices=["None", "FirstGen", "OriginalImg", "Historical"], value="FirstGen")
-        
+
         # multiframe processing pro
-        use_multiframe_pro = gr.Dropdown(label="开启多帧重绘魔改版！（选Multiframe开启）", choices=["Multiframe", "None"], value="Multiframe")
         # num_of_inputs = gr.Slider(minimum=3, maximum=6, step=1, label='Num of frames to process()', value=3, elem_id=self.elem_id("num_of_inputs"))
-        num_of_front_frame = gr.Slider(minimum=1, maximum=5, step=1, label='Num of frames have been processed', value=1, elem_id=self.elem_id("num_of_front_frame"))
-        num_of_first_frame = gr.Slider(minimum=1, maximum=5, step=1, label='Num of first frame(whitch will be repeated)', value=1, elem_id=self.elem_id("num_of_first_frame"))
-        org_alpha = gr.Slider(minimum=0, maximum=1, step=0.01, label='原图的透明度，降低为0，则为从空白图生成', value=0.1, elem_id=self.elem_id("org_alpha"))
-        max_frames = gr.Number(label='max_frames', precision=0, value=30)
-        
-        color_correction_enabled = gr.Checkbox(label="Enable Color Correction", value=False, elem_id=self.elem_id("color_correction_enabled"))
-        unfreeze_seed = gr.Checkbox(label="Unfreeze Seed", value=False, elem_id=self.elem_id("unfreeze_seed"))
-        loopback_source = gr.Dropdown(label="Loopback Source", choices=["PreviousFrame", "InputFrame","FirstGen"], value="InputFrame")
+        with gr.Row():
+            num_of_front_frame = gr.Slider(minimum=1, maximum=5, step=1,
+                                           label='之前画好的的参考帧的数量（小心爆显存！） Num of frames have been processed (May cause CUDA IS OUT OF MEMORY)',
+                                           value=1, elem_id=self.elem_id("num_of_front_frame"))
+            num_of_first_frame = gr.Slider(minimum=1, maximum=5, step=1,
+                                           label='第一张参考帧的重复数量（小心爆显存！） Num of first frame(whitch will be repeated) (May cause CUDA IS OUT OF MEMORY)',
+                                           value=1, elem_id=self.elem_id("num_of_first_frame"))
+        org_alpha = gr.Slider(minimum=0, maximum=1, step=0.01,
+                              label='原图的透明度，降低为0，则为从空白图生成（此时要把去噪强度拉到1，也就是，相当于只接受control net和prompt的输入，完全丢弃原图）', value=1,
+                              elem_id=self.elem_id("org_alpha"))
+        max_frames = gr.Number(
+            label='一次处理的最大帧数（测试用，你可以先尝试画10-30帧看看输出结果）Maximum number of frames processed at one time (for testing, you can first try drawing 10-30 frames to see the output results)',
+            precision=0, value=30)
+
+        color_correction_enabled = gr.Checkbox(label="开启颜色修复 Enable Color Correction", value=False,
+                                               elem_id=self.elem_id("color_correction_enabled"))
+        unfreeze_seed = gr.Checkbox(label="解冻随机种子 Unfreeze Seed", value=False, elem_id=self.elem_id("unfreeze_seed"))
+        loopback_source = gr.Dropdown(label="要重绘的图像（选InputFrame！不然就是一直跑第一帧） Loopback Source",
+                                      choices=["InputFrame", "FirstGen"], value="InputFrame")
 
         with gr.Row():
-            use_txt = gr.Checkbox(label='Read tags from text files')
+            use_txt = gr.Checkbox(label='从txt文件读取词条Read tags from text files')
 
         with gr.Row():
-            txt_path = gr.Textbox(label='Text files directory (Optional, will load from input dir if not specified)', lines=1)
+            txt_path = gr.Textbox(
+                label='txt文件的路径，空着则从图像输入路径读取txt Text files directory (Optional, will load from input dir if not specified)',
+                lines=1)
 
         with gr.Row():
-            use_csv = gr.Checkbox(label='Read tabular commands')
+            use_csv = gr.Checkbox(label='读取表格命令 Read tabular commands')
             csv_path = gr.File(label='.csv or .xlsx', file_types=['file'], visible=False)
 
         with gr.Row():
@@ -100,9 +127,9 @@ class Script(scripts.Script):
         return [append_interrogation,
                 input_dir,
                 output_dir,
-                first_denoise,
-                other_denoise,
-                use_multiframe_pro,
+                first_denoise_strength,
+                remaining_denoise_strength,
+                # use_multiframe_pro,
                 num_of_front_frame,
                 num_of_first_frame,
                 org_alpha,
@@ -114,15 +141,15 @@ class Script(scripts.Script):
                 table_content,
                 use_txt,
                 txt_path
-               ]
+                ]
 
-    def run(self, p, 
+    def run(self, p,
             append_interrogation,
             input_dir,
             output_dir,
-            first_denoise, 
-            other_denoise,
-            use_multiframe_pro,
+            first_denoise_strength,
+            remaining_denoise_strength,
+            # use_multiframe_pro,
             num_of_front_frame,
             num_of_first_frame,
             org_alpha,
@@ -134,12 +161,12 @@ class Script(scripts.Script):
             table_content,
             use_txt,
             txt_path
-           ):
-        if output_dir is "":
-            outpath ="output-" + time.strftime("%Y%m%d-%H%M-%S", time.localtime())
+            ):
+        if output_dir == "":
+            outpath = "output-" + time.strftime("%Y%m%d-%H%M-%S", time.localtime())
 
             output_dir = os.path.join(input_dir, outpath)
-            
+
         freeze_seed = not unfreeze_seed
 
         num_of_all_frame = num_of_front_frame + 1 + num_of_first_frame
@@ -150,23 +177,22 @@ class Script(scripts.Script):
 
         # 输入
         reference_imgs = [os.path.join(input_dir, f) for f in (os.listdir(input_dir)) if re.match(r'.+\.(jpg|png)$', f)]
-        
-        reference_imgs = sorted(reference_imgs, key=lambda x:int(x.split('/')[-1].split('\\')[-1].split('.')[0]))
-        
+
+        reference_imgs = sorted(reference_imgs, key=lambda x: int(x.split('/')[-1].split('\\')[-1].split('.')[0]))
+
         # print(f'Will process following files: {", ".join(reference_imgs)}')
 
         if use_txt:
             if txt_path == "":
                 files = [re.sub(r'\.(jpg|png)$', '.txt', path) for path in reference_imgs]
             else:
-                files = [os.path.join(txt_path, os.path.basename(re.sub(r'\.(jpg|png)$', '.txt', path))) for path in reference_imgs]
+                files = [os.path.join(txt_path, os.path.basename(re.sub(r'\.(jpg|png)$', '.txt', path))) for path in
+                         reference_imgs]
             prompt_list = [open(file, 'r').read().rstrip('\n') for file in files]
 
-        loops = len(reference_imgs) if len(reference_imgs) > max_frames else max_frames
+        loops = len(reference_imgs) if len(reference_imgs) < max_frames else max_frames
         print(f'Will process following files: {", ".join(reference_imgs[:loops])}')
-        
-        
-              
+
         processing.fix_seed(p)
         batch_count = p.n_iter
 
@@ -178,7 +204,7 @@ class Script(scripts.Script):
         initial_info = None
 
         initial_width = p.width
-        initial_img = reference_imgs[0] # p.init_images[0]
+        initial_img = reference_imgs[0]  # p.init_images[0]
 
         grids = []
         all_images = []
@@ -187,10 +213,11 @@ class Script(scripts.Script):
         # 传入prompt
         original_prompt = p.prompt
         if original_prompt != "":
-            original_prompt = original_prompt.rstrip(', ') + ', ' if not original_prompt.rstrip().endswith(',') else original_prompt.rstrip() + ' '
+            original_prompt = original_prompt.rstrip(', ') + ', ' if not original_prompt.rstrip().endswith(
+                ',') else original_prompt.rstrip() + ' '
         # original_denoise = p.denoising_strength
         # original_denoise = 0.3
-        
+
         state.job_count = loops * batch_count
 
         initial_color_corrections = [processing.setup_color_correction(p.init_images[0])]
@@ -215,9 +242,10 @@ class Script(scripts.Script):
             p.n_iter = 1
             p.batch_size = 1
             p.do_not_save_grid = True
-            p.control_net_input_image = Image.open(reference_imgs[i]).convert("RGBA").resize((initial_width, p.height), Image.ANTIALIAS)
+            p.control_net_input_image = Image.open(reference_imgs[i]).convert("RGBA").resize((initial_width, p.height),
+                                                                                             Image.ANTIALIAS)
 
-            if(i > 0):
+            if (i > 0):
                 # 初始化loopback图像源，并根据需求进行修改
                 loopback_image = p.init_images[0]
                 # 选择输入源为输入帧
@@ -227,10 +255,10 @@ class Script(scripts.Script):
                 elif loopback_source == "FirstGen":
                     loopback_image = history
 
-                if use_multiframe_pro != "None":
+                if True:
                     ###############################################################################
                     p.width = initial_width * num_of_all_frame
-                    img = Image.new("RGB", (initial_width*num_of_all_frame, p.height), "white")
+                    img = Image.new("RGB", (initial_width * num_of_all_frame, p.height), "white")
 
                     # # 把历史帧放进去
                     # for mpf_count in range(1,num_of_inputs-1):
@@ -242,23 +270,25 @@ class Script(scripts.Script):
                     # 把历史帧放进去
                     for mpf_count in range(num_of_front_frame):
                         if mpf_count < len(multiframepro_frames):
-                            img.paste(multiframepro_frames[-mpf_count-1], (initial_width*(num_of_front_frame-1-mpf_count), 0))
+                            img.paste(multiframepro_frames[-mpf_count - 1],
+                                      (initial_width * (num_of_front_frame - 1 - mpf_count), 0))
                         else:
-                            img.paste(multiframepro_frames[0], (initial_width*(num_of_front_frame-1-mpf_count), 0))                      
+                            img.paste(multiframepro_frames[0],
+                                      (initial_width * (num_of_front_frame - 1 - mpf_count), 0))
 
-                    # img.paste(p.init_images[0], (0, 0))  # 把刚刚画完的上一帧贴在左边
+                            # img.paste(p.init_images[0], (0, 0))  # 把刚刚画完的上一帧贴在左边
 
                     # 要画的图贴在中间
-                    img2 = Image.new("RGBA", (initial_width, p.height), "black")
+                    img2 = Image.new("RGBA", (initial_width, p.height), "white")
                     img2 = Image.blend(img2, loopback_image, org_alpha)
-                    img.paste(img2, (initial_width*(num_of_front_frame), 0))  
+                    img.paste(img2, (initial_width * (num_of_front_frame), 0))
 
                     # 第一步时，存下第一张图
                     if i == 1:
                         last_image = p.init_images[0]
                     # 把输入的第一个跑完的图，丢在右边
                     for count_last in range(num_of_first_frame):
-                        img.paste(last_image, (initial_width*(num_of_front_frame+1+count_last), 0))
+                        img.paste(last_image, (initial_width * (num_of_front_frame + 1 + count_last), 0))
 
                     p.init_images = [img]  # 把img放进去处理，待会送出去开跑
                     ###############################################################################
@@ -269,7 +299,7 @@ class Script(scripts.Script):
 
                     # CTRLnet的输入控制
                     # 创建CTRL输入（默认为黑图）
-                    ctrl_input_image = Image.new("RGB", (initial_width*num_of_all_frame, p.height))
+                    ctrl_input_image = Image.new("RGB", (initial_width * num_of_all_frame, p.height))
                     # # 往里面塞CTRL图层
                     # for ctrl_count in range(num_of_inputs-1):
                     #     if i + 2 - num_of_inputs + ctrl_count < 0:
@@ -277,11 +307,16 @@ class Script(scripts.Script):
                     #     else:
                     #         ctrl_input_image.paste(Image.open(reference_imgs[i+2-num_of_inputs+ctrl_count]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*(ctrl_count), 0))
                     # 往里面塞CTRL图层
-                    for ctrl_count in range(num_of_front_frame+1):
+                    for ctrl_count in range(num_of_front_frame + 1):
                         if i - num_of_front_frame + ctrl_count < 0:
-                            ctrl_input_image.paste(Image.open(reference_imgs[0]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*(ctrl_count), 0))
+                            ctrl_input_image.paste(
+                                Image.open(reference_imgs[0]).convert("RGB").resize((initial_width, p.height),
+                                                                                    Image.ANTIALIAS),
+                                (initial_width * (ctrl_count), 0))
                         else:
-                            ctrl_input_image.paste(Image.open(reference_imgs[i-num_of_front_frame + ctrl_count]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*(ctrl_count), 0))
+                            ctrl_input_image.paste(
+                                Image.open(reference_imgs[i - num_of_front_frame + ctrl_count]).convert("RGB").resize(
+                                    (initial_width, p.height), Image.ANTIALIAS), (initial_width * (ctrl_count), 0))
 
                     # # 左边位置放上一张的图
                     # ctrl_input_image.paste(Image.open(reference_imgs[i-1]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (0, 0))
@@ -289,55 +324,59 @@ class Script(scripts.Script):
                     # ctrl_input_image.paste(p.control_net_input_image, (initial_width*(num_of_inputs-2), 0))
                     # 最后一张，放最右边的（可放第一张，也可放按序号来的图）
                     for count_ctrl_last in range(num_of_first_frame):
-                        ctrl_input_image.paste(Image.open(reference_imgs[last_image_index]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*(num_of_front_frame+1+count_ctrl_last), 0))
+                        ctrl_input_image.paste(Image.open(reference_imgs[last_image_index]).convert("RGB").resize(
+                            (initial_width, p.height), Image.ANTIALIAS),
+                                               (initial_width * (num_of_front_frame + 1 + count_ctrl_last), 0))
                     p.control_net_input_image = ctrl_input_image
                     ###############################################################################
 
                     # 潜空间遮罩
-                    latent_mask = Image.new("RGB", (initial_width*num_of_all_frame, p.height), "black")
+                    latent_mask = Image.new("RGB", (initial_width * num_of_all_frame, p.height), "black")
                     latent_draw = ImageDraw.Draw(latent_mask)
-                    latent_draw.rectangle((initial_width*(num_of_front_frame),0,initial_width*(num_of_front_frame+1),p.height), fill="white")
+                    latent_draw.rectangle(
+                        (initial_width * (num_of_front_frame), 0, initial_width * (num_of_front_frame + 1), p.height),
+                        fill="white")
                     p.image_mask = latent_mask
-                    p.denoising_strength = other_denoise
+                    p.denoising_strength = remaining_denoise_strength
                     ###############################################################################
 
 
-#                 elif third_frame_image != "None":
-#                     p.width = initial_width * 3
-#                     img = Image.new("RGB", (initial_width*3, p.height))  # 创建一个新的img
+            #                 elif third_frame_image != "None":
+            #                     p.width = initial_width * 3
+            #                     img = Image.new("RGB", (initial_width*3, p.height))  # 创建一个新的img
 
-#                     img.paste(p.init_images[0], (0, 0))  # 把刚刚画完的上一帧贴在左边
-#                     # img.paste(p.init_images[0], (initial_width, 0))
+            #                     img.paste(p.init_images[0], (0, 0))  # 把刚刚画完的上一帧贴在左边
+            #                     # img.paste(p.init_images[0], (initial_width, 0))
 
-#                     img.paste(loopback_image, (initial_width, 0))  # 要跑的图贴在中间
-#                     if i == 1:  # 第一步的时候，把第三张图拿进去，后面这东西会一直保持
-#                         last_image = p.init_images[0]
-#                     img.paste(last_image, (initial_width*2, 0))
-#                     p.init_images = [img]
-#                     if color_correction_enabled:
-#                         p.color_corrections = [processing.setup_color_correction(img)]
+            #                     img.paste(loopback_image, (initial_width, 0))  # 要跑的图贴在中间
+            #                     if i == 1:  # 第一步的时候，把第三张图拿进去，后面这东西会一直保持
+            #                         last_image = p.init_images[0]
+            #                     img.paste(last_image, (initial_width*2, 0))
+            #                     p.init_images = [img]
+            #                     if color_correction_enabled:
+            #                         p.color_corrections = [processing.setup_color_correction(img)]
 
-#                     ctrl_input_image = Image.new("RGB", (initial_width*3, p.height))
-#                     ctrl_input_image.paste(Image.open(reference_imgs[i-1]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (0, 0))
-#                     ctrl_input_image.paste(p.control_net_input_image, (initial_width, 0))
-#                     ctrl_input_image.paste(Image.open(reference_imgs[last_image_index]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*2, 0))
-#                     p.control_net_input_image = ctrl_input_image
+            #                     ctrl_input_image = Image.new("RGB", (initial_width*3, p.height))
+            #                     ctrl_input_image.paste(Image.open(reference_imgs[i-1]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (0, 0))
+            #                     ctrl_input_image.paste(p.control_net_input_image, (initial_width, 0))
+            #                     ctrl_input_image.paste(Image.open(reference_imgs[last_image_index]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (initial_width*2, 0))
+            #                     p.control_net_input_image = ctrl_input_image
 
-#                     latent_mask = Image.new("RGB", (initial_width*3, p.height), "black")
-#                     latent_draw = ImageDraw.Draw(latent_mask)
-#                     latent_draw.rectangle((initial_width,0,initial_width*2,p.height), fill="white")
-#                     p.image_mask = latent_mask
-#                     p.denoising_strength = original_denoise
-
+            #                     latent_mask = Image.new("RGB", (initial_width*3, p.height), "black")
+            #                     latent_draw = ImageDraw.Draw(latent_mask)
+            #                     latent_draw.rectangle((initial_width,0,initial_width*2,p.height), fill="white")
+            #                     p.image_mask = latent_mask
+            #                     p.denoising_strength = original_denoise
 
             else:
                 # 第0步
                 latent_mask = Image.new("RGB", (initial_width, p.height), "white")
                 # p.latent_mask = latent_mask
                 p.image_mask = latent_mask
-                p.denoising_strength = first_denoise
+                p.denoising_strength = first_denoise_strength
                 p.control_net_input_image = p.control_net_input_image.resize((initial_width, p.height))
-                p.init_images = [Image.open(reference_imgs[0]).convert("RGB").resize((p.width, p.height), Image.ANTIALIAS)]
+                p.init_images = [
+                    Image.open(reference_imgs[0]).convert("RGB").resize((p.width, p.height), Image.ANTIALIAS)]
                 # p.init_images = [Image.new("RGB", (initial_width, p.height), "black").resize((p.width, p.height), Image.ANTIALIAS)]
                 # frames.append(p.control_net_input_image)
 
@@ -367,8 +406,9 @@ class Script(scripts.Script):
 
             # 拿出处理完的图片
             init_img = processed.images[0]
-            if(i > 0):  # 如果不是第一步，则需要裁剪图片（把中间那个图片抠出来，作为下一次循环的初始图片）
-                init_img = init_img.crop((initial_width*(num_of_front_frame), 0, initial_width*(num_of_front_frame+1), p.height))
+            if (i > 0):  # 如果不是第一步，则需要裁剪图片（把中间那个图片抠出来，作为下一次循环的初始图片）
+                init_img = init_img.crop(
+                    (initial_width * (num_of_front_frame), 0, initial_width * (num_of_front_frame + 1), p.height))
 
             # 劫持原模型
             comments = {}
@@ -428,12 +468,11 @@ class Script(scripts.Script):
             else:
                 init_img.save(os.path.join(output_dir, filename))
 
-
             # if third_frame_image != "None":  # 跑图时，根据需求修改这货，往last_image里面喂东西
             if True:  # 跑图时，根据需求修改这货，往last_image里面喂东西
                 # 喂第一张图（只有在第0步才会喂）
                 if True and i == 0:
-                # if third_frame_image == "FirstGen" and i == 0:
+                    # if third_frame_image == "FirstGen" and i == 0:
                     last_image = init_img
                     last_image_index = 0
                 # # 喂原图（只有在第0步才会喂）
@@ -448,11 +487,11 @@ class Script(scripts.Script):
             # 把跑完的图，放进要跑的东西里面
             p.init_images = [init_img]
             # 删除缓存区第一张，把另一张塞进结尾
-            if len(multiframepro_frames) >= (num_of_front_frame): 
+            if len(multiframepro_frames) >= (num_of_front_frame):
                 del (multiframepro_frames[0])
             multiframepro_frames += [init_img]
-            
-            if(freeze_seed):
+
+            if (freeze_seed):
                 p.seed = processed.seed
             else:
                 p.seed = processed.seed + 1
