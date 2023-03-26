@@ -260,7 +260,6 @@ class Script(scripts.Script):
                     p.width = initial_width * num_of_all_frame
                     img = Image.new("RGB", (initial_width * num_of_all_frame, p.height), "white")
 
-
                     # 把历史帧放进去
                     for mpf_count in range(num_of_front_frame):
                         if mpf_count < len(multiframepro_frames):
@@ -307,10 +306,6 @@ class Script(scripts.Script):
                                 Image.open(reference_imgs[i - num_of_front_frame + ctrl_count]).convert("RGB").resize(
                                     (initial_width, p.height), Image.ANTIALIAS), (initial_width * (ctrl_count), 0))
 
-                    # # 左边位置放上一张的图
-                    # ctrl_input_image.paste(Image.open(reference_imgs[i-1]).convert("RGB").resize((initial_width, p.height), Image.ANTIALIAS), (0, 0))
-                    # # 要画的地方放当前输入
-                    # ctrl_input_image.paste(p.control_net_input_image, (initial_width*(num_of_inputs-2), 0))
                     # 最后一张，放最右边的（可放第一张，也可放按序号来的图）
                     for count_ctrl_last in range(num_of_first_frame):
                         ctrl_input_image.paste(Image.open(reference_imgs[last_image_index]).convert("RGB").resize(
@@ -329,9 +324,6 @@ class Script(scripts.Script):
                     p.denoising_strength = remaining_denoise_strength
                     ###############################################################################
 
-
-
-
             else:
                 # 第0步
                 latent_mask = Image.new("RGB", (initial_width, p.height), "white")
@@ -341,8 +333,7 @@ class Script(scripts.Script):
                 p.control_net_input_image = p.control_net_input_image.resize((initial_width, p.height))
                 p.init_images = [
                     Image.open(reference_imgs[0]).convert("RGB").resize((p.width, p.height), Image.ANTIALIAS)]
-                # p.init_images = [Image.new("RGB", (initial_width, p.height), "black").resize((p.width, p.height), Image.ANTIALIAS)]
-                # frames.append(p.control_net_input_image)
+
 
 
             if append_interrogation != "None":
@@ -436,7 +427,6 @@ class Script(scripts.Script):
                     # if third_frame_image == "FirstGen" and i == 0:
                     last_image = init_img
                     last_image_index = 0
-
 
             # 把跑完的图，放进要跑的东西里面
             p.init_images = [init_img]
