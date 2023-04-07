@@ -89,7 +89,7 @@ class Script(scripts.Script):
                               elem_id=self.elem_id("org_alpha"))
         max_frames = gr.Number(
             label='一次处理的最大帧数（测试用，可先尝试画10-30帧看看输出结果）Maximum number of frames processed at one time',
-            precision=0, value=30)
+            precision=0, value=9999)
 
         color_correction_enabled = gr.Checkbox(label="开启颜色修复 Enable Color Correction", value=False,
                                                elem_id=self.elem_id("color_correction_enabled"))
@@ -344,8 +344,8 @@ class Script(scripts.Script):
                     p.prompt += deepbooru.model.tag(p.init_images[0])
 
             if use_csv or use_txt:
-                # p.prompt = original_prompt + prompt_list[i]
-                p.prompt = prompt_list[i]
+                p.prompt = original_prompt + prompt_list[i]
+                # p.prompt = prompt_list[i]
 
             # 开跑#########################################################################
             # 得到返回值
